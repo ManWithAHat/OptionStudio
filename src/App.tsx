@@ -1,15 +1,14 @@
 import React from 'react';
 import Sidebar from './components/sidebar';
-import MainPanel from './components/MainPanel';
+import BlackScholesPanel from './components/BlackScholes/blackscholespanel';
 
-/**
- * Root App with flex layout: sidebar left, main panel right
- */
 function App() {
   return (
     <div className="flex h-screen">
       <Sidebar />
-      <MainPanel />
+      <div className="flex-1 p-6 overflow-auto">
+        <BlackScholesPanel />
+      </div>
     </div>
   );
 }
