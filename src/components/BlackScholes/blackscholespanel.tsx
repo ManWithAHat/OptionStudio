@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import Plot from 'react-plotly.js';
+import GreeksPanel from './greekspanel';
 import { blackScholes } from '../../utils/blackscholes';
 
 const BlackScholesPanel: React.FC = () => {
@@ -11,38 +12,31 @@ const BlackScholesPanel: React.FC = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [optionType, setOptionType] = useState<'call' | 'put'>('call');
 
-  // Generate strike range
+  // Strike range
   const strikeRange = useMemo(() => {
     const minStrike = Math.max(1, S * 0.5);
     const maxStrike = S * 1.5;
     const step = (maxStrike - minStrike) / 100;
-    const arr = [];
-    for (let k = minStrike; k <= maxStrike; k += step) arr.push(k);
-    return arr;
+    return Array.from({ length: 101 }, (_, i) => minStrike + i * step);
   }, [S]);
 
-  // Price curves
-  const callPrices = useMemo(
-    () => strikeRange.map(k => blackScholes({ S, K: k, T, r, sigma, type: 'call' })),
-    [S, T, r, sigma, strikeRange]
-  );
-  const putPrices = useMemo(
-    () => strikeRange.map(k => blackScholes({ S, K: k, T, r, sigma, type: 'put' })),
-    [S, T, r, sigma, strikeRange]
-  );
+  // Prices
+  const callPrices = useMemo(() => strikeRange.map(k => blackScholes({ S, K: k, T, r, sigma, type: 'call' })), [S, T, r, sigma, strikeRange]);
+  const putPrices = useMemo(() => strikeRange.map(k => blackScholes({ S, K: k, T, r, sigma, type: 'put' })), [S, T, r, sigma, strikeRange]);
 
-  // Payoff curve at maturity
-  const payoffLine = useMemo(() => {
-    if (optionType === 'call') {
-      return strikeRange.map(k => Math.max(S - k, 0));
-    } else {
-      return strikeRange.map(k => Math.max(k - S, 0));
-    }
-  }, [optionType, S, strikeRange]);
+  // Payoff line
+  const payoffLine = useMemo(() => strikeRange.map(k =>
+    optionType === 'call' ? Math.max(S - k, 0) : Math.max(k - S, 0)
+  ), [optionType, S, strikeRange]);
 
-  // Current prices for marker
-  const currentCallPrice = blackScholes({ S, K, T, r, sigma, type: 'call' });
-  const currentPutPrice = blackScholes({ S, K, T, r, sigma, type: 'put' });
+  // P/L shading: difference between payoff and current option price
+  const plLine = useMemo(() => strikeRange.map((_, i) =>
+    payoffLine[i] - (optionType === 'call' ? callPrices[i] : putPrices[i])
+  ), [payoffLine, callPrices, putPrices, optionType]);
+
+  const currentPrice = optionType === 'call'
+    ? blackScholes({ S, K, T, r, sigma, type: 'call' })
+    : blackScholes({ S, K, T, r, sigma, type: 'put' });
 
   return (
     <div className={darkMode ? 'bg-gray-900 text-white p-4 rounded-lg' : 'bg-white text-black p-4 rounded-lg'}>
@@ -53,38 +47,21 @@ const BlackScholesPanel: React.FC = () => {
 
       {/* Input Form */}
       <div className="grid grid-cols-6 gap-4 mb-6">
-        <div>
-          <label className="block text-sm mb-1">Spot (S)</label>
-          <input type="number" value={S} onChange={e => setS(Number(e.target.value))}
-            className="w-full p-2 border rounded text-black" />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">Strike (K)</label>
-          <input type="number" value={K} onChange={e => setK(Number(e.target.value))}
-            className="w-full p-2 border rounded text-black" />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">Time (T, yrs)</label>
-          <input type="number" step="0.1" value={T} onChange={e => setT(Number(e.target.value))}
-            className="w-full p-2 border rounded text-black" />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">Volatility (σ)</label>
-          <input type="number" step="0.01" value={sigma} onChange={e => setSigma(Number(e.target.value))}
-            className="w-full p-2 border rounded text-black" />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">Rate (r)</label>
-          <input type="number" step="0.01" value={r} onChange={e => setR(Number(e.target.value))}
-            className="w-full p-2 border rounded text-black" />
-        </div>
+        {[
+          { label: 'Spot (S)', value: S, setter: setS },
+          { label: 'Strike (K)', value: K, setter: setK },
+          { label: 'Time (T, yrs)', value: T, setter: setT },
+          { label: 'Volatility (σ)', value: sigma, setter: setSigma },
+          { label: 'Rate (r)', value: r, setter: setR },
+        ].map(({ label, value, setter }) => (
+          <div key={label}>
+            <label className="block text-sm mb-1">{label}</label>
+            <input type="number" value={value} onChange={e => setter(Number(e.target.value))} className="w-full p-2 border rounded text-black" />
+          </div>
+        ))}
         <div>
           <label className="block text-sm mb-1">Option Type</label>
-          <select
-            value={optionType}
-            onChange={e => setOptionType(e.target.value as 'call' | 'put')}
-            className="w-full p-2 border rounded text-black"
-          >
+          <select value={optionType} onChange={e => setOptionType(e.target.value as 'call' | 'put')} className="w-full p-2 border rounded text-black">
             <option value="call">Call</option>
             <option value="put">Put</option>
           </select>
@@ -115,28 +92,27 @@ const BlackScholesPanel: React.FC = () => {
             y: payoffLine,
             type: 'scatter',
             mode: 'lines',
-            name: `${optionType.toUpperCase()} Payoff at Maturity`,
+            name: `${optionType.toUpperCase()} Payoff`,
             line: { color: '#10b981', width: 2, dash: 'dash' },
           },
           {
-            x: [K],
-            y: [currentCallPrice],
+            x: strikeRange,
+            y: plLine,
             type: 'scatter',
-            mode: 'text+markers',
-            name: 'Current Call',
-            marker: { color: '#3b82f6', size: 10 },
-            text: [`Call: ${currentCallPrice.toFixed(2)}`],
-            textposition: 'top center',
+            mode: 'none',
+            fill: 'tonexty',
+            fillcolor: 'rgba(16,185,129,0.2)',
+            name: 'Profit/Loss Zone',
           },
           {
             x: [K],
-            y: [currentPutPrice],
+            y: [currentPrice],
             type: 'scatter',
             mode: 'text+markers',
-            name: 'Current Put',
-            marker: { color: '#ef4444', size: 10 },
-            text: [`Put: ${currentPutPrice.toFixed(2)}`],
-            textposition: 'bottom center',
+            name: 'Current Price',
+            marker: { color: '#facc15', size: 10 },
+            text: [`${optionType} Price: ${currentPrice.toFixed(2)}`],
+            textposition: 'top center',
           },
         ]}
         layout={{
@@ -150,20 +126,25 @@ const BlackScholesPanel: React.FC = () => {
           margin: { t: 60, r: 30, b: 60, l: 60 },
         }}
         useResizeHandler
-        style={{ width: '100%', height: '550px' }}
+        style={{ width: '100%', height: '600px' }}
         config={{ displayModeBar: true, responsive: true }}
       />
 
-      {/* Explanation Section */}
+      {/* Explanation */}
       <div className="mt-6 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg">
         <h3 className="text-lg font-semibold mb-2">📘 How to Read This Graph</h3>
         <p className="text-sm leading-relaxed">
-          The horizontal axis shows different <strong>strike prices (K)</strong>, which are the fixed prices at which you can buy (call) or sell (put) the underlying asset in the future.  
-          The blue and red curves show the <strong>current market price</strong> of call and put options at each strike, using the Black–Scholes model.  
-          The green dashed line shows the <strong>payoff at maturity</strong>: this is what the option is worth at expiry, not today.  
-          Notice how call prices are higher for lower strikes (because it's cheaper to buy), while put prices are higher for higher strikes (because it's more valuable to sell at a high price).  
-          The model price curves are always above the payoff line — because they include <strong>time value</strong> (the chance that the option will become more valuable before maturity).  
+          The horizontal axis shows <strong>strike prices (K)</strong>.  
+          The blue and red curves are the <strong>current option prices</strong> for calls and puts, calculated with Black–Scholes.  
+          The green dashed line is the <strong>payoff at maturity</strong>, showing what the option will be worth at expiry.  
+          The shaded area represents <strong>profit/loss (P/L)</strong> relative to current price: above zero is potential profit, below is loss.  
+          The yellow marker shows the current strike and option price.  
+          Notice how call prices are higher for lower strikes and put prices are higher for higher strikes. The payoff line intersects the price curves, showing the difference between intrinsic value and market price (time value).
         </p>
+      </div>
+      {/* Greeks Panel */}
+      <div className="mt-8">
+        <GreeksPanel S={S} T={T} r={r} sigma={sigma} optionType={optionType} />
       </div>
     </div>
   );
